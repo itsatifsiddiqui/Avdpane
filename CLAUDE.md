@@ -1,0 +1,14 @@
+# Avdpane project rules
+- Delegate every task to a subagent and pick the model by task: sonnet for simple edits and lookups, opus for complex design or testing, fable for long running build, debugging, or multi step work.
+- Build with `swift build -c release` (incremental only) and package with `./make-app.sh`; never run a clean build while the machine is loaded, check `uptime` first.
+- Run the app as `build/Avdpane.app` or `.build/release/Avdpane --open <avd id>`; `/tmp/wid` lists its window numbers for `screencapture -x -l <n>`.
+- No Accessibility permission for scripting: drive the UI with `lldb -b -p <pid> -s script.lldb`, always detach, never leave the app stopped.
+- Emulators launch with `-grpc <port> -qt-hide-window -crash-report-mode never`; never use `-no-window` with extended controls, it crashes the emulator.
+- Do not kill processes you did not start; only `pkill -x Avdpane` when no other agent is testing.
+- Swift 6 strict concurrency: UI on MainActor, gRPC on background tasks, new methods at the end of a type.
+- Comments in plain English, max 2 lines, explain why; no em dashes or en dashes anywhere, including strings and README.
+- Names: booleans read as is/has; no manager, helper, util, data, info names; same concept same name across files.
+- All UserDefaults keys live in `Settings.swift`; never use `UserDefaults.standard` elsewhere.
+- Keep diffs small, no reformatting of untouched lines, no abstractions with one implementation, no comments about history.
+- Every change is verified by running it with evidence (screenshot, log line, adb output) before it is reported as done.
+- Never commit or push unless asked; leave the app and the Pixel 10 Pro emulator running at the end of a task.

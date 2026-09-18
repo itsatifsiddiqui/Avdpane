@@ -1,0 +1,22 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build -c release
+      - run: VERSION=${GITHUB_REF_NAME#v} ./make-app.sh
+      - run: ditto -c -k --keepParent "build/Avdpane.app" "Avdpane-${GITHUB_REF_NAME}.zip"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: Avdpane-${{ github.ref_name }}.zip
+          generate_release_notes: true
