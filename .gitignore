@@ -3,3 +3,5 @@ build/
 *.iconset/
 .DS_Store
 *.xcodeproj/
+.agents/skills/brag
+brag-output/

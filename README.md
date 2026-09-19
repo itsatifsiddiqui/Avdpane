@@ -2,6 +2,18 @@
 
 Avdpane shows Android emulators in native Mac windows. It talks to the emulator over its built in gRPC API. Each emulator gets its own window that you can move, resize, tile and put in Split View like any other Mac app.
 
+## Screenshots
+
+<video src="assets/avdpane.mp4" controls muted loop playsinline width="100%"></video>
+
+[Watch the demo video](assets/avdpane.mp4) if the player above does not load.
+
+<p>
+  <img src="assets/start-window.png" alt="AVD list window" width="32%">
+  <img src="assets/device-window.png" alt="Device window with toolbar" width="32%">
+  <img src="assets/settings-window.png" alt="Settings window" width="32%">
+</p>
+
 ## Requirements
 
 - Apple Silicon Mac with macOS 15 or newer
