@@ -23,4 +23,5 @@ extension DeviceWindowController {
         NSPasteboard.general.setData(png, forType: .png)
         showHud("Copied")
     }
+
 }

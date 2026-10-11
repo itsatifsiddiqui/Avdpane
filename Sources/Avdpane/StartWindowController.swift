@@ -1,4 +1,7 @@
 import AppKit
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 
 // The start screen: lists every AVD and opens a device window for the chosen one.
 @MainActor
@@ -9,6 +12,7 @@ final class StartWindowController: NSWindowController, NSWindowDelegate, NSTable
     private let modeControl = NSSegmentedControl(labels: ["Headless", "With emulator window"], trackingMode: .selectOne, target: nil, action: nil)
     private let stopButton = NSButton(title: "Stop", target: nil, action: #selector(stop(_:)))
     private let openButton = NSButton(title: "Open", target: nil, action: #selector(open(_:)))
+    private let desktopQRButton = NSButton(title: "Desktop QR", target: nil, action: #selector(importDesktopQRCode(_:)))
     private var refreshTimer: Timer?
     // A launch, stop or restart is in flight, so the timer must not switch the buttons back on halfway.
     private var isBusy = false
@@ -18,7 +22,7 @@ final class StartWindowController: NSWindowController, NSWindowDelegate, NSTable
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 420),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         super.init(window: window)
@@ -48,9 +52,11 @@ final class StartWindowController: NSWindowController, NSWindowDelegate, NSTable
         let refreshButton = NSButton(title: "Refresh", target: self, action: #selector(refresh(_:)))
         stopButton.target = self
         openButton.target = self
+        desktopQRButton.target = self
+        desktopQRButton.toolTip = "Capture a desktop QR code as the emulator's live camera input"
         openButton.keyEquivalent = "\r"
 
-        let buttons = NSStackView(views: [modeControl, NSView(), refreshButton, stopButton, openButton])
+        let buttons = NSStackView(views: [modeControl, NSView(), refreshButton, desktopQRButton, stopButton, openButton])
         buttons.orientation = .horizontal
         let stack = NSStackView(views: [scroll, messageLabel, buttons])
         stack.orientation = .vertical
@@ -113,6 +119,7 @@ final class StartWindowController: NSWindowController, NSWindowDelegate, NSTable
     private func updateButtons() {
         let running = selectedAvd?.running
         stopButton.isEnabled = !isBusy && running != nil
+        desktopQRButton.isEnabled = !isBusy && running != nil
         openButton.isEnabled = !isBusy && selectedAvd != nil
         openButton.title = running.map { $0.hasGrpcEnabled ? "Open" : "Restart" } ?? "Open"
     }
@@ -158,6 +165,142 @@ final class StartWindowController: NSWindowController, NSWindowDelegate, NSTable
             let isStopped = await stopAndWait(running)
             if !isStopped { showAlert(AvdError.stopTimedOut(avd.name)) }
             refresh(nil)
+        }
+    }
+
+    @objc private func importDesktopQRCode(_ sender: Any?) {
+        guard let running = selectedAvd?.running else {
+            showMessage("Select a running emulator first.", isError: true)
+            return
+        }
+        guard CGPreflightScreenCaptureAccess() else {
+            _ = CGRequestScreenCaptureAccess()
+            showMessage("Allow Avdpane in Privacy & Security > Screen & System Audio Recording, then quit and reopen Avdpane.", isError: true)
+            return
+        }
+        guard let avd = selectedAvd else { return }
+        let captureURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Avdpane-QR-\(UUID().uuidString).png")
+        let sourceURL = URL(fileURLWithPath: Settings.desktopQRCodePath)
+        // The emulator reads imagefile: once during emulator startup. Reopening the
+        // Android camera is not enough after the host image changes, so every new QR
+        // capture must restart the emulator to load the new frame.
+        let needsRestart = true
+        isBusy = true
+        updateButtons()
+        showMessage("Select the QR code area...", isError: false)
+        Task {
+            let captured = await Task.detached { Self.captureDesktopRegion(to: captureURL) }.value
+            guard captured else {
+                try? FileManager.default.removeItem(at: captureURL)
+                isBusy = false
+                showMessage("QR capture cancelled", isError: true)
+                updateButtons()
+                return
+            }
+            let prepared = await Task.detached {
+                Self.prepareCameraImage(from: captureURL, to: sourceURL)
+            }.value
+            try? FileManager.default.removeItem(at: captureURL)
+            guard prepared else {
+                isBusy = false
+                showMessage("Could not prepare the QR camera frame", isError: true)
+                updateButtons()
+                return
+            }
+
+            if needsRestart {
+                showMessage("QR captured. Restarting emulator to enable live camera input...", isError: false)
+                let stopped = await stopAndWait(running)
+                guard stopped else {
+                    isBusy = false
+                    showMessage(AvdError.stopTimedOut(avd.name).localizedDescription, isError: true)
+                    refresh(nil)
+                    return
+                }
+                do {
+                    let port = try AvdCatalog.launch(avd, isHeadless: running.isHeadless)
+                    guard await wait(upTo: 30, until: { AvdCatalog.runningEmulators()[avd.id] != nil }) else {
+                        throw AvdError.launchTimedOut(avd.name)
+                    }
+                    AppDelegate.shared.openDeviceWindow(avd: avd, port: port)
+                    showMessage("QR is now the live back camera. Open WeChat Scan.", isError: false)
+                } catch {
+                    showAlert(error)
+                }
+            }
+            isBusy = false
+            refresh(nil)
+        }
+    }
+
+    private nonisolated static func captureDesktopRegion(to url: URL) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-i", "-x", "-t", "png", url.path]
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return false
+        }
+        return process.terminationStatus == 0 && FileManager.default.fileExists(atPath: url.path)
+    }
+
+    // Android 10's imagefile camera source expects an RGBA portrait image on this AVD.
+    // We keep the QR itself square in the source frame. WeChat applies its own camera
+    // preview transform, so pre-compressing the source makes the QR visibly rectangular.
+    private nonisolated static func prepareCameraImage(from inputURL: URL, to outputURL: URL) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(inputURL as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              image.width > 0, image.height > 0 else { return false }
+        let width = 800
+        let height = 1280
+        guard let context = CGContext(
+            data: nil, width: width, height: height,
+            // CoreGraphics does not create a device-RGB bitmap with 3-byte rows on
+            // macOS. Keep the canvas in premultiplied RGBA; JPEG encoding below
+            // removes the alpha channel when it writes the camera source.
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        // Keep the source QR square. The smaller canvas footprint leaves enough margin
+        // for WeChat's preview crop while preserving all four quiet-zone edges.
+        let maxContentWidth = 100.0
+        let maxContentHeight = 100.0
+        let cameraHorizontalCompensation = 1.0
+        let scale = min(maxContentWidth / Double(image.width), maxContentHeight / Double(image.height))
+        let drawWidth = Double(image.width) * scale * cameraHorizontalCompensation
+        let drawHeight = Double(image.height) * scale
+        let drawRect = CGRect(
+            x: 90,
+            y: 520,
+            width: drawWidth, height: drawHeight)
+        context.interpolationQuality = .none
+        context.draw(image, in: drawRect)
+        guard let result = context.makeImage() else { return false }
+
+        let directory = outputURL.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let temporaryURL = directory.appendingPathComponent(".DesktopQR-\(UUID().uuidString).png")
+            guard let destination = CGImageDestinationCreateWithURL(
+                temporaryURL as CFURL, UTType.png.identifier as CFString, 1, nil) else { return false }
+            CGImageDestinationAddImage(destination, result, nil)
+            guard CGImageDestinationFinalize(destination) else {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                return false
+            }
+            if FileManager.default.fileExists(atPath: outputURL.path) {
+                _ = try FileManager.default.replaceItemAt(outputURL, withItemAt: temporaryURL)
+            } else {
+                try FileManager.default.moveItem(at: temporaryURL, to: outputURL)
+            }
+            return true
+        } catch {
+            return false
         }
     }
 

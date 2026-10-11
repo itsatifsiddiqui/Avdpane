@@ -79,9 +79,9 @@ extension DeviceWindowController: NSToolbarDelegate {
         return item
     }
 
-    @objc func goBack(_ sender: Any?) { emulator.sendKey(name: "GoBack") }
-    @objc func goHome(_ sender: Any?) { emulator.sendKey(name: "GoHome") }
-    @objc func showRecents(_ sender: Any?) { emulator.sendKey(name: "AppSwitch") }
+    @objc func goBack(_ sender: Any?) { emulator.sendSystemKey(name: "GoBack") }
+    @objc func goHome(_ sender: Any?) { emulator.sendSystemKey(name: "GoHome") }
+    @objc func showRecents(_ sender: Any?) { emulator.sendSystemKey(name: "AppSwitch") }
     @objc func pressPower(_ sender: Any?) { emulator.sendKey(name: "Power") }
     @objc func volumeUp(_ sender: Any?) { sendAdbKey("KEYCODE_VOLUME_UP") }
     @objc func volumeDown(_ sender: Any?) { sendAdbKey("KEYCODE_VOLUME_DOWN") }

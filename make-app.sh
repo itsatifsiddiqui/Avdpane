@@ -8,7 +8,7 @@ cd "$ROOT"
 APP="$ROOT/build/Avdpane.app"
 VERSION="${VERSION:-0.0.1}"
 
-swift build -c release
+swift build --disable-sandbox -c release
 
 # Regenerate the icon only when it is missing, the committed one is fine otherwise.
 if [ ! -f Resources/AppIcon.icns ]; then
@@ -50,6 +50,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <string>NSApplication</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.developer-tools</string>
+  <key>NSCameraUsageDescription</key>
+  <string>The Android emulator uses your Mac camera when you select it as a virtual camera.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>The Android emulator uses your Mac microphone when recording video.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Avdpane captures the selected desktop QR code and sends it to the Android emulator camera.</string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Avdpane talks to Android emulators running on this Mac.</string>
 </dict>

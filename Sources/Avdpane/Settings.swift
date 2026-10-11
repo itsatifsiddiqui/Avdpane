@@ -35,6 +35,14 @@ enum Settings {
         set { defaults.set(newValue.isEmpty ? nil : newValue, forKey: "screenshotFolder") }
     }
 
+    // The emulator opens this host image as a camera source. Android receives it through
+    // the camera HAL as repeated preview frames; it never enters Gallery or MediaStore.
+    static var desktopQRCodePath: String {
+        // The emulator's camera option parser splits on spaces even when Process passes
+        // the argument as one item, so keep this path free of spaces.
+        "/tmp/AvdpaneDesktopQR.png"
+    }
+
     static var isSidebarShown: Bool {
         get { defaults.bool(forKey: "isSidebarShown") }
         set { defaults.set(newValue, forKey: "isSidebarShown"); postAppearanceChange() }
